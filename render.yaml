@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: sanctions-chat-agent
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: HOST=0.0.0.0 python web_app.py
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-v4-flash
+      - key: DEEPSEEK_BASE_URL
+        value: https://api.deepseek.com
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: SERPAPI_API_KEY
+        sync: false

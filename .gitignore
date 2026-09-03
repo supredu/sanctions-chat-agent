@@ -1,0 +1,9 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+source_files/
+data/*.tmp.sqlite
+data/*.sqlite-wal
+data/*.sqlite-shm

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sanctions Chat Agent MVP</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Sanctions intelligence MVP</p>
+          <h1>Chat Agent</h1>
+        </div>
+        <span id="session-pill" class="pill">New session</span>
+      </header>
+
+      <section id="messages" class="messages" aria-live="polite"></section>
+
+      <form id="chat-form" class="composer">
+        <textarea
+          id="message"
+          rows="1"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="输入区块链地址或实体名称，支持实体名称模糊查询"
+        ></textarea>
+        <button type="submit">发送</button>
+      </form>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
