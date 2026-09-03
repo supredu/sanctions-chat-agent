@@ -4,15 +4,31 @@ const input = document.querySelector("#message");
 const sessionPill = document.querySelector("#session-pill");
 const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8765" : "";
 
-let sessionId = window.localStorage.getItem("sanctions_chat_session_id");
+let sessionId = readSessionId();
+
+function readSessionId() {
+  try {
+    return window.localStorage.getItem("sanctions_chat_session_id");
+  } catch {
+    return null;
+  }
+}
+
+function saveSessionId(value) {
+  try {
+    window.localStorage.setItem("sanctions_chat_session_id", value);
+  } catch {
+    // The chat can still work without browser storage.
+  }
+}
 
 function escapeHtml(value) {
   return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function renderAnswerText(value) {
@@ -22,7 +38,7 @@ function renderAnswerText(value) {
     .replace(/\*\*(.*?)\*\*/g, "$1")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/^---+$/gm, "")
-    .replaceAll("\n", "<br>");
+    .replace(/\n/g, "<br>");
 }
 
 function appendMessage(role, html) {
@@ -252,7 +268,7 @@ async function sendMessage(message) {
     throw new Error(payload.error || "Chat request failed");
   }
   sessionId = payload.session_id;
-  window.localStorage.setItem("sanctions_chat_session_id", sessionId);
+  saveSessionId(sessionId);
   sessionPill.textContent = `Session ${sessionId.slice(0, 8)}`;
   return payload;
 }
@@ -309,7 +325,22 @@ input.addEventListener("input", () => {
   input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
 });
 
-appendMessage(
-  "assistant",
-  `<p>请输入区块链地址或实体名称。支持实体名称模糊查询；如果本地库匹配到多个实体，我会先让你选择，再继续联网核查。</p>`
-);
+input.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || event.shiftKey) {
+    return;
+  }
+  event.preventDefault();
+  form.requestSubmit();
+});
+
+try {
+  appendMessage(
+    "assistant",
+    `<p>请输入区块链地址或实体名称。支持实体名称模糊查询；如果本地库匹配到多个实体，我会先让你选择，再继续联网核查。</p>`
+  );
+} catch (error) {
+  document.body.insertAdjacentHTML(
+    "beforeend",
+    `<pre style="color:#b91c1c;padding:16px;">前端初始化失败：${escapeHtml(error.message || String(error))}</pre>`
+  );
+}
