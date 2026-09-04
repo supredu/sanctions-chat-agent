@@ -13,9 +13,14 @@ from agents import function_tool
 SOURCE_DIR = Path("source_files")
 SQLITE_INDEX = Path("data/sanctions_index.sqlite")
 OFAC_ADVANCED_XML = SOURCE_DIR / "sdn_advanced.xml"
+UK_SANCTIONS_XML = SOURCE_DIR / "UK-Sanctions-List.xml"
 OFAC_ADVANCED_NS = {
     "ofac": "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/ADVANCED_XML"
 }
+CRYPTO_ADDRESS_RE = re.compile(
+    r"\b(?:0x[a-fA-F0-9]{40}|T[1-9A-HJ-NP-Za-km-z]{33}|[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[0-9a-z]{25,90})\b"
+)
+UK_SANCTIONS_SOURCE_URL = "https://www.gov.uk/government/publications/the-uk-sanctions-list"
 
 
 @dataclass
@@ -154,6 +159,98 @@ def _date_from_node(node: ET.Element | None) -> str | None:
         return None
 
     return f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+
+
+def _uk_date(value: str | None) -> str | None:
+    if not value:
+        return None
+    value = value.strip()
+    match = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", value)
+    if not match:
+        return value or None
+    day, month, year = match.groups()
+    return f"{year}-{month}-{day}"
+
+
+def _text_from_child(node: ET.Element, tag: str) -> str | None:
+    child = node.find(tag)
+    if child is None:
+        return None
+    values = [
+        (element.text or "").strip()
+        for element in child.iter()
+        if (element.text or "").strip()
+    ]
+    return " ".join(values) if values else None
+
+
+def _split_pipe_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+    return [part.strip() for part in value.split("|") if part.strip()]
+
+
+def _uk_names(designation: ET.Element) -> tuple[str | None, list[str]]:
+    names: list[tuple[str, str]] = []
+    names_node = designation.find("Names")
+    if names_node is None:
+        return None, []
+
+    for name_node in names_node.findall("Name"):
+        parts = [
+            (name_node.findtext(f"Name{i}") or "").strip()
+            for i in range(1, 7)
+        ]
+        name = " ".join(part for part in parts if part)
+        name_type = (name_node.findtext("NameType") or "").strip()
+        if name:
+            names.append((name_type, name))
+
+    primary = next((name for name_type, name in names if name_type == "Primary Name"), None)
+    if primary is None and names:
+        primary = names[0][1]
+    aliases = sorted({name for _, name in names if name != primary})
+
+    non_latin_node = designation.find("NonLatinNames")
+    if non_latin_node is not None:
+        for value in non_latin_node.iter():
+            text = (value.text or "").strip()
+            if text and text != primary:
+                aliases.append(text)
+
+    return primary, sorted(set(aliases))
+
+
+def _infer_currency_from_context(text: str, address: str) -> str | None:
+    start = max(0, text.find(address) - 40)
+    context = text[start : text.find(address) + len(address)]
+    labels = re.findall(r"\b(XBT|BTC|ETH|BNB|USDT|TRON|TRX)\s*[:：]?", context, flags=re.IGNORECASE)
+    if labels:
+        return labels[-1].upper()
+    if address.startswith(("0x", "0X")):
+        return "ETH"
+    if address.startswith("T"):
+        return "TRON"
+    if address.startswith(("1", "3", "bc1")):
+        return "BTC"
+    return None
+
+
+def _extract_crypto_addresses(text: str | None) -> list[dict[str, str | None]]:
+    if not text:
+        return []
+    seen: set[tuple[str, str | None]] = set()
+    addresses: list[dict[str, str | None]] = []
+    for match in CRYPTO_ADDRESS_RE.finditer(text):
+        address = match.group(0)
+        normalized = normalize_address(address)
+        currency = _infer_currency_from_context(text, address)
+        key = (normalized, currency)
+        if key in seen:
+            continue
+        seen.add(key)
+        addresses.append({"address": address, "currency": currency})
+    return addresses
 
 
 def _primary_identity_name(identity: ET.Element) -> str | None:
@@ -431,6 +528,111 @@ def load_ofac_advanced_xml_entities(path: Path = OFAC_ADVANCED_XML) -> list[Loca
     return records
 
 
+def load_uk_sanctions_xml_hits(path: Path = UK_SANCTIONS_XML) -> list[LocalSanctionHit]:
+    if not path.exists():
+        return []
+
+    root = ET.parse(path).getroot()
+    publication_date = _uk_date(root.findtext("DateGenerated"))
+    hits: list[LocalSanctionHit] = []
+
+    for designation in root.findall("Designation"):
+        entity_name, aliases = _uk_names(designation)
+        entity_id = designation.findtext("UniqueID")
+        authority_id = designation.findtext("OFSIGroupID") or designation.findtext("UNReferenceNumber")
+        date_designated = _uk_date(designation.findtext("DateDesignated"))
+        other_information = _text_from_child(designation, "OtherInformation")
+        statement_of_reasons = _text_from_child(designation, "UKStatementofReasons")
+        programs = _split_pipe_values(designation.findtext("SanctionsImposed"))
+        regime_name = designation.findtext("RegimeName")
+        addresses = _extract_crypto_addresses(other_information)
+
+        for address in addresses:
+            hits.append(
+                LocalSanctionHit(
+                    address=address["address"] or "",
+                    currency=address["currency"],
+                    source="UK Sanctions List XML",
+                    source_file=str(path),
+                    entity_name=entity_name,
+                    entity_id=entity_id,
+                    authority="Office of Financial Sanctions Implementation",
+                    authority_id=authority_id,
+                    list_name="UK Sanctions List",
+                    program=programs,
+                    reason=[value for value in [regime_name, statement_of_reasons] if value],
+                    sanction_dates=[date_designated] if date_designated else [],
+                    publication_date=publication_date,
+                    source_urls=[UK_SANCTIONS_SOURCE_URL],
+                    source_description="UK Sanctions List XML local source file published by the UK government.",
+                    metadata={
+                        "aliases": aliases,
+                        "last_updated": _uk_date(designation.findtext("LastUpdated")),
+                        "designation_source": designation.findtext("DesignationSource"),
+                        "individual_entity_ship": designation.findtext("IndividualEntityShip"),
+                        "other_information": other_information,
+                    },
+                )
+            )
+
+    return hits
+
+
+def load_uk_sanctions_xml_entities(path: Path = UK_SANCTIONS_XML) -> list[LocalEntityRecord]:
+    if not path.exists():
+        return []
+
+    root = ET.parse(path).getroot()
+    publication_date = _uk_date(root.findtext("DateGenerated"))
+    records: list[LocalEntityRecord] = []
+
+    for designation in root.findall("Designation"):
+        entity_name, aliases = _uk_names(designation)
+        if not entity_name:
+            continue
+
+        entity_id = designation.findtext("UniqueID") or entity_name
+        authority_id = designation.findtext("OFSIGroupID") or designation.findtext("UNReferenceNumber")
+        date_designated = _uk_date(designation.findtext("DateDesignated"))
+        other_information = _text_from_child(designation, "OtherInformation")
+        statement_of_reasons = _text_from_child(designation, "UKStatementofReasons")
+        addresses = _extract_crypto_addresses(other_information)
+
+        records.append(
+            LocalEntityRecord(
+                entity_id=entity_id,
+                name=entity_name,
+                source="UK Sanctions List XML",
+                source_file=str(path),
+                authority="Office of Financial Sanctions Implementation",
+                authority_id=authority_id,
+                list_name="UK Sanctions List",
+                aliases=aliases,
+                programs=_split_pipe_values(designation.findtext("SanctionsImposed")),
+                reasons=[value for value in [designation.findtext("RegimeName"), statement_of_reasons] if value],
+                sanction_dates=[date_designated] if date_designated else [],
+                publication_date=publication_date,
+                source_urls=[UK_SANCTIONS_SOURCE_URL],
+                addresses=[
+                    {
+                        "address": address["address"],
+                        "currency": address["currency"],
+                        "source": "UK Sanctions List XML",
+                    }
+                    for address in addresses
+                ],
+                metadata={
+                    "last_updated": _uk_date(designation.findtext("LastUpdated")),
+                    "designation_source": designation.findtext("DesignationSource"),
+                    "individual_entity_ship": designation.findtext("IndividualEntityShip"),
+                    "other_information": other_information,
+                },
+            )
+        )
+
+    return records
+
+
 def iter_jsonl(path: Path) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if not path.exists():
@@ -658,7 +860,7 @@ def search_sqlite_entities(query: str, limit: int = 10, path: Path = SQLITE_INDE
         score = fuzzy_score_name(query, record["name"], record.get("aliases", []))
         if score <= 0:
             continue
-        if record.get("source") == "OFAC Advanced XML":
+        if record.get("source") in {"OFAC Advanced XML", "UK Sanctions List XML"}:
             score += 5
         if record.get("sanction_dates"):
             score += 3
@@ -674,6 +876,7 @@ def search_sqlite_entities(query: str, limit: int = 10, path: Path = SQLITE_INDE
 def load_local_sanctions_index() -> dict[str, list[dict[str, Any]]]:
     hits: list[LocalSanctionHit] = []
     hits.extend(load_ofac_advanced_xml_hits())
+    hits.extend(load_uk_sanctions_xml_hits())
     for path in ftm_jsonl_files():
         hits.extend(load_ftm_jsonl_hits(path))
 
@@ -693,6 +896,7 @@ def lookup_local_sanctions(address: str) -> list[dict[str, Any]]:
 def load_local_entity_records() -> list[dict[str, Any]]:
     records: list[LocalEntityRecord] = []
     records.extend(load_ofac_advanced_xml_entities())
+    records.extend(load_uk_sanctions_xml_entities())
     for path in ftm_jsonl_files():
         records.extend(load_ftm_jsonl_entities(path))
     return [record.to_dict() for record in records]
@@ -707,7 +911,7 @@ def search_local_entities(query: str, limit: int = 10) -> list[dict[str, Any]]:
         score = fuzzy_score_name(query, record["name"], record.get("aliases", []))
         if score <= 0:
             continue
-        if record.get("source") == "OFAC Advanced XML":
+        if record.get("source") in {"OFAC Advanced XML", "UK Sanctions List XML"}:
             score += 5
         if record.get("sanction_dates"):
             score += 3

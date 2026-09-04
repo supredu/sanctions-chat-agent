@@ -15,6 +15,8 @@ from tools.local_sanctions import (
     load_ftm_jsonl_hits,
     load_ofac_advanced_xml_entities,
     load_ofac_advanced_xml_hits,
+    load_uk_sanctions_xml_entities,
+    load_uk_sanctions_xml_hits,
     normalize_address,
     normalize_name,
     ftm_jsonl_files,
@@ -72,6 +74,7 @@ def create_schema(connection: sqlite3.Connection) -> None:
 
 def insert_address_hits(connection: sqlite3.Connection) -> None:
     hits = load_ofac_advanced_xml_hits()
+    hits.extend(load_uk_sanctions_xml_hits())
     for path in ftm_jsonl_files():
         hits.extend(load_ftm_jsonl_hits(path))
 
@@ -89,6 +92,7 @@ def insert_address_hits(connection: sqlite3.Connection) -> None:
 
 def insert_entity_records(connection: sqlite3.Connection) -> None:
     records = load_ofac_advanced_xml_entities()
+    records.extend(load_uk_sanctions_xml_entities())
     for path in ftm_jsonl_files():
         records.extend(load_ftm_jsonl_entities(path))
 
