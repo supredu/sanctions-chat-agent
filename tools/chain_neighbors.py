@@ -5,7 +5,6 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Protocol
-from uuid import uuid4
 
 
 _ADDRESS_IN_PAIR_LINE_RE = re.compile(r"地址:([A-Za-z0-9x]+)")
@@ -71,7 +70,7 @@ class BitraceMcpNeighborProvider:
             pass
         self.endpoint = endpoint or os.environ.get("BITRACE_MCP_URL")
         self.api_token = api_token or os.environ.get("BITRACE_API_TOKEN")
-        self.session_id = session_id or os.environ.get("BITRACE_MCP_SESSION_ID") or str(uuid4())
+        self.session_id = session_id or os.environ.get("BITRACE_MCP_SESSION_ID")
         self.timeout = timeout or float(os.environ.get("BITRACE_MCP_TIMEOUT_SECONDS", "8"))
         self.last_meta = ChainNeighborLookupMeta(status="not_started")
 
@@ -187,30 +186,69 @@ class BitraceMcpNeighborProvider:
         return deduped
 
     def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return self._post_jsonrpc("tools/call", {"name": name, "arguments": arguments}, retry_on_missing_session=True)
+
+    def _initialize_session(self) -> None:
+        if not self.endpoint or not self.api_token:
+            return
+
+        payload = {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "sanctions-chat-agent", "version": "0.1.0"},
+        }
+        self._post_jsonrpc("initialize", payload, include_session=False, retry_on_missing_session=False)
+
+    def _post_jsonrpc(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        include_session: bool = True,
+        retry_on_missing_session: bool = False,
+    ) -> dict[str, Any]:
+        if include_session and not self.session_id:
+            self._initialize_session()
+
         request_body = json.dumps(
             {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "tools/call",
-                "params": {"name": name, "arguments": arguments},
+                "method": method,
+                "params": params,
             }
         ).encode("utf-8")
+        headers = {
+            "API-TOKEN": self.api_token or "",
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        if include_session and self.session_id:
+            headers["Mcp-Session-Id"] = self.session_id
+
         request = urllib.request.Request(
             self.endpoint or "",
             data=request_body,
             method="POST",
-            headers={
-                "API-TOKEN": self.api_token or "",
-                "Mcp-Session-Id": self.session_id,
-                "Content-Type": "application/json",
-                "Accept": "application/json, text/event-stream",
-            },
+            headers=headers,
         )
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                session_id = response.headers.get("Mcp-Session-Id")
+                if session_id:
+                    self.session_id = session_id
                 return _decode_mcp_response(response.read().decode("utf-8", errors="replace"))
         except urllib.error.HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
+            if retry_on_missing_session and exc.code == 404 and "Session not found" in body:
+                self.session_id = None
+                self._initialize_session()
+                return self._post_jsonrpc(
+                    method,
+                    params,
+                    include_session=include_session,
+                    retry_on_missing_session=False,
+                )
             raise RuntimeError(f"Bitrace MCP HTTP {exc.code}: {body[:500]}") from exc
 
     def _extract_transactions(self, payload: dict[str, Any]) -> list[dict[str, Any]]:

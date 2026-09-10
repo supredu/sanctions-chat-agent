@@ -36,6 +36,7 @@ def lookup_local_query(
         address_profile = classify_address(query)
         hits = lookup_local_sanctions(query)
         related_hits: list[dict[str, Any]] = []
+        seen_related_hits: set[tuple[str, str | None, str | None, str]] = set()
         neighbor_lookup = {"status": "not_requested"}
         if include_neighbors:
             active_provider = neighbor_provider or configured_bitrace_neighbor_provider()
@@ -47,6 +48,15 @@ def lookup_local_query(
             ):
                 neighbor_hits = lookup_local_sanctions(neighbor.counterparty_address)
                 for hit in neighbor_hits:
+                    dedupe_key = (
+                        neighbor.counterparty_address.lower(),
+                        hit.get("entity_name"),
+                        hit.get("authority"),
+                        neighbor.direction,
+                    )
+                    if dedupe_key in seen_related_hits:
+                        continue
+                    seen_related_hits.add(dedupe_key)
                     related_hits.append(
                         {
                             "input_address": neighbor.input_address,
