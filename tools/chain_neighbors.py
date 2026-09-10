@@ -99,6 +99,7 @@ class BitraceMcpNeighborProvider:
             errors: list[str] = []
             for chain in chains:
                 chain_neighbors: list[ChainNeighbor] = []
+                pair_neighbors: list[ChainNeighbor] = []
                 for direction in ("OUT", "IN"):
                     try:
                         payload = self._call_tool(
@@ -121,7 +122,7 @@ class BitraceMcpNeighborProvider:
                         tools_used.add("getTxs")
                     except Exception as exc:
                         errors.append(f"{chain}:{direction}:{exc}")
-                if not chain_neighbors:
+                if len(neighbors) < limit:
                     try:
                         pair_payload = self._call_tool(
                             "getPairs",
@@ -132,11 +133,11 @@ class BitraceMcpNeighborProvider:
                                 "locale": "ZH_CN",
                             },
                         )
-                        chain_neighbors = self._neighbors_from_pairs_text(address, chain, pair_payload, limit)
+                        pair_neighbors = self._neighbors_from_pairs_text(address, chain, pair_payload, limit)
                         tools_used.add("getPairs")
                     except Exception as exc:
                         errors.append(f"{chain}:getPairs:{exc}")
-                neighbors.extend(chain_neighbors)
+                neighbors = _dedupe_neighbors([*neighbors, *pair_neighbors, *chain_neighbors])
                 if len(neighbors) >= limit:
                     neighbors = neighbors[:limit]
                     break
@@ -330,6 +331,7 @@ class BitraceMcpNeighborProvider:
         text = _extract_text_content(payload)
         if not text:
             return []
+        text = text.replace("\\n", "\n")
 
         seen: set[tuple[str, str]] = set()
         neighbors: list[ChainNeighbor] = []
@@ -433,6 +435,18 @@ def _amount_from_pair_line(line: str, label: str) -> float:
 def configured_bitrace_neighbor_provider() -> BitraceMcpNeighborProvider | None:
     provider = BitraceMcpNeighborProvider()
     return provider if provider.configured else None
+
+
+def _dedupe_neighbors(neighbors: list[ChainNeighbor]) -> list[ChainNeighbor]:
+    seen: set[tuple[str, str, str]] = set()
+    deduped: list[ChainNeighbor] = []
+    for neighbor in neighbors:
+        key = (neighbor.chain, neighbor.direction, neighbor.counterparty_address.casefold())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(neighbor)
+    return deduped
 
 
 def get_one_hop_neighbors(
