@@ -82,6 +82,15 @@ def lookup_local_query(
                     "status": "not_configured",
                     "message": "BITRACE_MCP_URL and BITRACE_API_TOKEN are not configured.",
                 }
+            if related_hits:
+                neighbor_lookup = {
+                    **neighbor_lookup,
+                    "status": "related_hit",
+                    "message": None,
+                    "matched_sanctioned_address_count": len(
+                        {hit["related_address"].lower() for hit in related_hits}
+                    ),
+                }
         return {
             "query": query,
             "query_type": query_type,

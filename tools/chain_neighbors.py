@@ -71,7 +71,7 @@ class BitraceMcpNeighborProvider:
         self.endpoint = endpoint or os.environ.get("BITRACE_MCP_URL")
         self.api_token = api_token or os.environ.get("BITRACE_API_TOKEN")
         self.session_id = session_id or os.environ.get("BITRACE_MCP_SESSION_ID")
-        self.timeout = timeout or float(os.environ.get("BITRACE_MCP_TIMEOUT_SECONDS", "8"))
+        self.timeout = timeout or float(os.environ.get("BITRACE_MCP_TIMEOUT_SECONDS", "30"))
         self.last_meta = ChainNeighborLookupMeta(status="not_started")
 
     @property

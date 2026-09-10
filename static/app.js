@@ -67,6 +67,11 @@ function renderResultCard(result) {
   const finding = result.finding || {};
   const evidence = result.evidence || [];
   const relatedHits = result.related_hits || [];
+  const firstRelated = relatedHits[0] || {};
+  const isRelatedOnly = !finding.direct_sanction_hit && finding.related_sanction_hit;
+  const objectLabel = isRelatedOnly ? "Related sanctioned object" : "Sanctioned object";
+  const authorityLabel = isRelatedOnly ? "Related authority" : "Authority";
+  const dateLabel = isRelatedOnly ? "Related sanction date" : "Sanction date";
 
   return `
     <section class="result-card">
@@ -76,9 +81,9 @@ function renderResultCard(result) {
       </div>
       <dl class="fields">
         ${field("Query type", result.query_type)}
-        ${field("Sanctioned object", finding.sanctioned_entity)}
-        ${field("Authority", finding.sanction_authority)}
-        ${field("Sanction date", finding.sanction_date)}
+        ${field(objectLabel, finding.sanctioned_entity || firstRelated.sanctioned_entity)}
+        ${field(authorityLabel, finding.sanction_authority || firstRelated.sanction_authority)}
+        ${field(dateLabel, finding.sanction_date || firstRelated.sanction_date)}
         ${field("Program", finding.program)}
         ${field("Reason", finding.sanction_reason)}
       </dl>
@@ -118,7 +123,7 @@ function renderRelatedHits(relatedHits) {
     return "";
   }
 
-  const items = relatedHits.slice(0, 5).map((hit) => {
+  const items = relatedHits.map((hit) => {
     return `<li>${escapeHtml(hit.description)} ${escapeHtml(hit.sanctioned_entity || "")}</li>`;
   });
 

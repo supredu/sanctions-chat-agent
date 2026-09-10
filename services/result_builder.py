@@ -82,9 +82,11 @@ def build_sanction_result_from_local_payload(payload: dict[str, Any]) -> Sanctio
         confidence = "high" if best_hit.get("source") in {"OFAC Advanced XML", "UK Sanctions List XML"} else "medium"
         gaps = ["Live web publication pages have not been checked yet."]
     elif related_hits:
-        summary = f"Local sources did not directly match {query}, but one-hop related sanctions hits were found."
+        summary = (
+            f"Local sources did not directly match {query}, but sanctioned one-hop counterparties were found."
+        )
         confidence = "medium"
-        gaps = ["One-hop relationship data depends on the configured chain-neighbor API provider."]
+        gaps = ["This is an indirect exposure finding, not a direct sanctions designation for the queried address."]
     else:
         summary = f"No direct local sanctions match was found for {query}."
         confidence = "unknown"
