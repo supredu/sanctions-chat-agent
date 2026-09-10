@@ -226,6 +226,10 @@ class BitraceMcpNeighborProvider:
             txs = _find_transaction_list(parsed)
             if txs is not None:
                 return txs
+            text = _extract_text_content(parsed)
+            text_txs = _parse_get_txs_text(text)
+            if text_txs:
+                return text_txs
         return []
 
     def _neighbors_from_transactions(
@@ -242,8 +246,12 @@ class BitraceMcpNeighborProvider:
         for tx in transactions:
             from_address = _first_string(tx, "from", "fromAddress", "from_address", "sender")
             to_address = _first_string(tx, "to", "toAddress", "to_address", "receiver")
+            pair_address = _first_string(tx, "pair", "pairAddress", "counterparty", "counterpartyAddress")
             direction = _direction_from_transaction(input_norm, from_address, to_address, requested_direction)
-            if direction == "outbound":
+            if pair_address:
+                counterparty = pair_address
+                direction = _normalize_direction(_first_string(tx, "direction")) or direction
+            elif direction == "outbound":
                 counterparty = to_address
             elif direction == "inbound":
                 counterparty = from_address
@@ -338,6 +346,40 @@ def _direction_from_transaction(
     if requested_direction == "OUT":
         return "outbound"
     return "unknown"
+
+
+def _normalize_direction(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().casefold()
+    if normalized in {"in", "inbound"}:
+        return "inbound"
+    if normalized in {"out", "outbound"}:
+        return "outbound"
+    return None
+
+
+def _parse_get_txs_text(text: str) -> list[dict[str, Any]]:
+    if not text:
+        return []
+
+    transactions: list[dict[str, Any]] = []
+    text = text.replace("\\n", "\n")
+    for line in text.splitlines():
+        line = line.strip().strip('"')
+        if not line or "hash:" not in line:
+            continue
+
+        tx: dict[str, Any] = {}
+        for part in line.split(";"):
+            if ":" not in part:
+                continue
+            key, value = part.split(":", 1)
+            tx[key.strip()] = value.strip()
+        if tx:
+            transactions.append(tx)
+
+    return transactions
 
 
 def _amount_from_pair_line(line: str, label: str) -> float:
