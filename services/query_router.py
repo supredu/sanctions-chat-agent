@@ -53,6 +53,7 @@ def lookup_local_query(
                             "related_address": neighbor.counterparty_address,
                             "relationship_depth": 1,
                             "relationship_type": neighbor.relationship_type,
+                            "chain": neighbor.chain,
                             "tx_hash": neighbor.tx_hash,
                             "block_time": neighbor.block_time,
                             "direction": neighbor.direction,
