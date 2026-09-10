@@ -3,7 +3,12 @@ from typing import Any, Literal
 from agents import function_tool
 
 from tools.blockchain_lookup import classify_address
-from tools.chain_neighbors import ChainNeighborProvider, get_one_hop_neighbors
+from tools.chain_neighbors import (
+    BitraceMcpNeighborProvider,
+    ChainNeighborProvider,
+    configured_bitrace_neighbor_provider,
+    get_one_hop_neighbors,
+)
 from tools.local_sanctions import lookup_local_sanctions, search_local_entities
 
 
@@ -21,7 +26,7 @@ def lookup_local_query(
     query: str,
     entity_limit: int = 10,
     include_neighbors: bool = False,
-    chain_id: str = "1",
+    chain_id: str = "auto",
     neighbor_limit: int = 1000,
     neighbor_provider: ChainNeighborProvider | None = None,
 ) -> dict[str, Any]:
@@ -31,12 +36,14 @@ def lookup_local_query(
         address_profile = classify_address(query)
         hits = lookup_local_sanctions(query)
         related_hits: list[dict[str, Any]] = []
+        neighbor_lookup = {"status": "not_requested"}
         if include_neighbors:
+            active_provider = neighbor_provider or configured_bitrace_neighbor_provider()
             for neighbor in get_one_hop_neighbors(
                 query,
                 chain_id=chain_id,
                 limit=neighbor_limit,
-                provider=neighbor_provider,
+                provider=active_provider,
             ):
                 neighbor_hits = lookup_local_sanctions(neighbor.counterparty_address)
                 for hit in neighbor_hits:
@@ -60,6 +67,13 @@ def lookup_local_query(
                             "sanction_hit": hit,
                         }
                     )
+            if isinstance(active_provider, BitraceMcpNeighborProvider):
+                neighbor_lookup = active_provider.last_meta.__dict__
+            elif active_provider is None:
+                neighbor_lookup = {
+                    "status": "not_configured",
+                    "message": "BITRACE_MCP_URL and BITRACE_API_TOKEN are not configured.",
+                }
         return {
             "query": query,
             "query_type": query_type,
@@ -73,6 +87,7 @@ def lookup_local_query(
             "hits": hits,
             "related_hit_count": len(related_hits),
             "related_hits": related_hits,
+            "neighbor_lookup": neighbor_lookup,
         }
 
     hits = search_local_entities(query, limit=entity_limit)

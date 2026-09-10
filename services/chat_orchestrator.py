@@ -61,7 +61,7 @@ class SanctionsChatOrchestrator:
         return new_session
 
     def _handle_address_query(self, session: ChatSession, query: str) -> dict[str, Any]:
-        payload = lookup_local_query(query)
+        payload = lookup_local_query(query, include_neighbors=True)
         result = build_sanction_result_from_local_payload(payload).model_dump()
         session.pending_candidates = []
         session.last_query = query

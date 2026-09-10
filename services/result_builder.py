@@ -15,7 +15,7 @@ def _first(values: list[str] | None) -> str | None:
 
 
 def _source_type(source: str | None) -> str:
-    if source == "OFAC Advanced XML":
+    if source in {"OFAC Advanced XML", "UK Sanctions List XML"}:
         return "official_list"
     if source and source.startswith("FollowTheMoney"):
         return "blockchain_analytics"
@@ -38,7 +38,7 @@ def _best_direct_hit(hits: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not hits:
         return None
 
-    official_hits = [hit for hit in hits if hit.get("source") == "OFAC Advanced XML"]
+    official_hits = [hit for hit in hits if hit.get("source") in {"OFAC Advanced XML", "UK Sanctions List XML"}]
     dated_hits = [hit for hit in official_hits if hit.get("sanction_dates")]
     return (dated_hits or official_hits or hits)[0]
 
@@ -79,7 +79,7 @@ def build_sanction_result_from_local_payload(payload: dict[str, Any]) -> Sanctio
             f"{finding.sanctioned_entity or 'unknown entity'} via "
             f"{finding.sanction_authority or 'unknown authority'}."
         )
-        confidence = "high" if best_hit.get("source") == "OFAC Advanced XML" else "medium"
+        confidence = "high" if best_hit.get("source") in {"OFAC Advanced XML", "UK Sanctions List XML"} else "medium"
         gaps = ["Live web publication pages have not been checked yet."]
     elif related_hits:
         summary = f"Local sources did not directly match {query}, but one-hop related sanctions hits were found."
