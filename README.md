@@ -12,6 +12,10 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 # Optional, used by the chat MVP web enrichment layer.
 BRAVE_SEARCH_API_KEY=your_brave_search_key
 SERPAPI_API_KEY=your_serpapi_key
+# Optional, used for outbound one-hop counterparty checks.
+BITRACE_MCP_URL=https://...
+BITRACE_API_TOKEN=your_bitrace_token
+BITRACE_MCP_SESSION_ID=optional_session_id
 ```
 
 Run the hello-world smoke test:
@@ -32,7 +36,7 @@ Run local deterministic auto-routing without the LLM:
 .venv/bin/python main.py Gaza --local --json
 ```
 
-Reserve one-hop chain-neighbor checks for a future provider:
+Run local routing with outbound one-hop counterparty checks when Bitrace MCP is configured:
 
 ```bash
 .venv/bin/python main.py 0x... --local --neighbors --json
@@ -71,11 +75,21 @@ Search sanctioned entities by fuzzy name:
 - Lists priority sanctions source families.
 - Returns a structured `SanctionResult`.
 - Parses local OFAC Advanced XML and FollowTheMoney JSONL exports.
+- Parses local UK Sanctions List XML exports.
+- Checks outbound one-hop counterparties through Bitrace MCP when configured, then
+  matches counterparties against the local sanctions index before involving the LLM.
 - Serves a simple chat-style MVP UI from `web_app.py`.
 - Performs public web enrichment with official OFAC seed URLs, optional Brave
   Search / SerpAPI support, and a no-key DuckDuckGo HTML fallback.
 - Uses DeepSeek in the chat MVP to synthesize local sanctions hits, web evidence,
   explorer context, and follow-up questions into a final Chinese analyst-style answer.
+
+## Documentation
+
+- [Agent design](docs/agent_design.md)
+- [Agent design, Chinese](docs/agent_design_zh.md)
+- [API documentation](docs/api.md)
+- [Data partner API requirements, Chinese](docs/data_partner_api_requirements_zh.md)
 
 ## Local Source Files
 
@@ -87,11 +101,13 @@ source_files/entities.ftm.OFAC.json
 source_files/entities.ftm.ISRAEL.json
 source_files/entities.ftm.JAPAN.json
 source_files/entities.ftm.FRENCH.json
+source_files/UK-Sanctions-List.xml
 ```
 
 The local parser builds a normalized blockchain-address index from:
 
 - OFAC Advanced XML `Digital Currency Address - ...` features.
+- UK Sanctions List XML designations and crypto addresses embedded in `OtherInformation`.
 - FollowTheMoney JSONL `CryptoWallet` entities.
 - Linked `Sanction` and holder entities where available.
 
@@ -99,6 +115,8 @@ Date handling:
 
 - OFAC Advanced XML `EntryEvent/Date` is treated as an official sanction date.
 - OFAC Advanced XML `DateOfIssue` is treated as the local source-file publication date.
+- UK Sanctions List XML `DateDesignated` is treated as an official sanction date.
+- UK Sanctions List XML `DateGenerated` is treated as the local source-file publication date.
 - FollowTheMoney JSONL dates are third-party metadata only and are not used as official sanction
   or publication dates.
 
@@ -122,4 +140,6 @@ lookup artifact.
 This repository includes `render.yaml`. Push the project to GitHub, create a new
 Render Blueprint from the repo, and set `DEEPSEEK_API_KEY` in Render environment
 variables. Optional production search providers can be configured with
-`BRAVE_SEARCH_API_KEY` or `SERPAPI_API_KEY`.
+`BRAVE_SEARCH_API_KEY` or `SERPAPI_API_KEY`. To enable one-hop checks in the
+deployed chat UI, also set `BITRACE_MCP_URL` and `BITRACE_API_TOKEN`; set
+`BITRACE_MCP_SESSION_ID` only if the provider requires a stable session id.

@@ -114,12 +114,14 @@ def _build_research_prompt(
         "standard_result": result,
         "local_hits": (raw_payload or {}).get("hits", [])[:3],
         "related_hits": (raw_payload or {}).get("related_hits", [])[:5],
+        "neighbor_lookup": (raw_payload or {}).get("neighbor_lookup"),
         "web_enrichment": web_enrichment,
         "explorer_context": explorer_context,
     }
     return (
         "请基于下面 JSON 上下文回答用户。输出适合聊天窗口阅读，不要输出 JSON。\n"
         "回答必须包含：结论、制裁对象、制裁时间、制裁源、原因、发布/信息来源、证据链接、仍需核查的缺口。\n"
+        "如果 neighbor_lookup 的 status 是 error 或 partial_error，必须说明一跳查询未完整完成，不能把 related_hits 为空解释为确认无一跳关系。\n"
         "不要使用 Markdown 标题、表格、加粗符号、分割线、代码块或 emoji。请使用简短中文段落和普通标签行，例如“制裁对象：...”，不要在每行前加“字段：”。\n"
         "如果是追问，优先回答追问本身，但保留关键证据来源。\n\n"
         + json.dumps(compact_context, ensure_ascii=False, indent=2)
@@ -172,4 +174,7 @@ def _fallback_answer(
         lines.append(f"联网补充：{web_enrichment.get('summary') or '-'}")
     if explorer_context:
         lines.append(f"浏览器检查：{explorer_context.get('summary') or '-'}")
+    neighbor_lookup = (result.get("raw_payload") or {}).get("neighbor_lookup") if isinstance(result, dict) else None
+    if neighbor_lookup:
+        lines.append(f"一跳查询状态：{neighbor_lookup.get('status') or '-'}")
     return "\n".join(lines)

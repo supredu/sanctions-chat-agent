@@ -60,10 +60,7 @@ def lookup_local_query(
                             "sanctioned_entity": hit.get("entity_name"),
                             "sanction_date": (hit.get("sanction_dates") or [None])[0],
                             "source_url": (hit.get("source_urls") or [None])[0],
-                            "description": (
-                                f"{neighbor.input_address} has a one-hop {neighbor.relationship_type} "
-                                f"relationship with sanctioned address {neighbor.counterparty_address}."
-                            ),
+                            "description": _related_hit_description(neighbor),
                             "sanction_hit": hit,
                         }
                     )
@@ -106,3 +103,20 @@ def lookup_local_query(
 def route_and_query_local_sources(query: str, entity_limit: int = 10) -> dict[str, Any]:
     """Infer whether the query is an address or entity name, then query local sanctions sources."""
     return lookup_local_query(query, entity_limit=entity_limit)
+
+
+def _related_hit_description(neighbor: Any) -> str:
+    if neighbor.direction == "inbound":
+        return (
+            f"{neighbor.input_address} received a one-hop transfer from sanctioned address "
+            f"{neighbor.counterparty_address}."
+        )
+    if neighbor.direction == "outbound":
+        return (
+            f"{neighbor.input_address} sent a one-hop transfer to sanctioned address "
+            f"{neighbor.counterparty_address}."
+        )
+    return (
+        f"{neighbor.input_address} has a one-hop transfer relationship with sanctioned address "
+        f"{neighbor.counterparty_address}."
+    )

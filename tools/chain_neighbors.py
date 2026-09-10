@@ -61,7 +61,7 @@ class BitraceMcpNeighborProvider:
         endpoint: str | None = None,
         api_token: str | None = None,
         session_id: str | None = None,
-        timeout: float = 25.0,
+        timeout: float | None = None,
     ) -> None:
         try:
             from config import load_dotenv
@@ -72,7 +72,7 @@ class BitraceMcpNeighborProvider:
         self.endpoint = endpoint or os.environ.get("BITRACE_MCP_URL")
         self.api_token = api_token or os.environ.get("BITRACE_API_TOKEN")
         self.session_id = session_id or os.environ.get("BITRACE_MCP_SESSION_ID") or str(uuid4())
-        self.timeout = timeout
+        self.timeout = timeout or float(os.environ.get("BITRACE_MCP_TIMEOUT_SECONDS", "8"))
         self.last_meta = ChainNeighborLookupMeta(status="not_started")
 
     @property
@@ -97,46 +97,58 @@ class BitraceMcpNeighborProvider:
             neighbors: list[ChainNeighbor] = []
             total_transactions = 0
             tools_used: set[str] = set()
+            errors: list[str] = []
             for chain in chains:
-                payload = self._call_tool(
-                    "getTxs",
-                    {
-                        "chain": chain,
-                        "address": address,
-                        "direction": "OUT",
-                        "pageNumber": 1,
-                        "pageSize": min(max(limit, 1), 1000),
-                        "sort": "desc",
-                        "sortBy": "txTime",
-                    },
-                )
-                transactions = self._extract_transactions(payload)
-                total_transactions += len(transactions)
-                chain_neighbors = self._neighbors_from_transactions(address, chain, transactions, limit)
-                tools_used.add("getTxs")
+                chain_neighbors: list[ChainNeighbor] = []
+                for direction in ("OUT", "IN"):
+                    try:
+                        payload = self._call_tool(
+                            "getTxs",
+                            {
+                                "chain": chain,
+                                "address": address,
+                                "direction": direction,
+                                "pageNumber": 1,
+                                "pageSize": min(max(limit, 1), 1000),
+                                "sort": "desc",
+                                "sortBy": "txTime",
+                            },
+                        )
+                        transactions = self._extract_transactions(payload)
+                        total_transactions += len(transactions)
+                        chain_neighbors.extend(
+                            self._neighbors_from_transactions(address, chain, transactions, limit, direction)
+                        )
+                        tools_used.add("getTxs")
+                    except Exception as exc:
+                        errors.append(f"{chain}:{direction}:{exc}")
                 if not chain_neighbors:
-                    pair_payload = self._call_tool(
-                        "getPairs",
-                        {
-                            "chain": chain,
-                            "address": address,
-                            "reason": ["outValue", "outCount"],
-                            "locale": "ZH_CN",
-                        },
-                    )
-                    chain_neighbors = self._neighbors_from_pairs_text(address, chain, pair_payload, limit)
-                    tools_used.add("getPairs")
+                    try:
+                        pair_payload = self._call_tool(
+                            "getPairs",
+                            {
+                                "chain": chain,
+                                "address": address,
+                                "reason": ["inValue", "outValue", "inCount", "outCount"],
+                                "locale": "ZH_CN",
+                            },
+                        )
+                        chain_neighbors = self._neighbors_from_pairs_text(address, chain, pair_payload, limit)
+                        tools_used.add("getPairs")
+                    except Exception as exc:
+                        errors.append(f"{chain}:getPairs:{exc}")
                 neighbors.extend(chain_neighbors)
                 if len(neighbors) >= limit:
                     neighbors = neighbors[:limit]
                     break
             self.last_meta = ChainNeighborLookupMeta(
-                status="ok",
+                status="partial_error" if errors else "ok",
                 chain=",".join(chains),
                 sampled_transaction_count=total_transactions,
                 unique_counterparty_count=len(neighbors),
                 truncated=total_transactions >= min(max(limit, 1), 1000),
                 raw={"tools": sorted(tools_used), "queried_chains": chains},
+                message="; ".join(errors[:3]) if errors else None,
             )
             return neighbors
         except Exception as exc:
@@ -157,10 +169,16 @@ class BitraceMcpNeighborProvider:
         if normalized_chain:
             return [normalized_chain]
 
+        configured_chains = [
+            chain.strip()
+            for chain in os.environ.get("BITRACE_ONE_HOP_CHAINS", "").split(",")
+            if chain.strip()
+        ]
+        if configured_chains:
+            return [chain for chain in (_normalize_chain(item) for item in configured_chains) if chain]
+
         first_chain = self._resolve_chain(address, chain_id)
         chains = [first_chain]
-        if address.strip().startswith(("0x", "0X")):
-            chains.extend(["eth", "bsc", "polygon", "arbitrum", "base", "optimism", "avalanche"])
 
         deduped: list[str] = []
         for chain in chains:
@@ -216,19 +234,26 @@ class BitraceMcpNeighborProvider:
         chain: str,
         transactions: list[dict[str, Any]],
         limit: int,
+        requested_direction: str = "ALL",
     ) -> list[ChainNeighbor]:
         input_norm = input_address.casefold()
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()
         neighbors: list[ChainNeighbor] = []
         for tx in transactions:
             from_address = _first_string(tx, "from", "fromAddress", "from_address", "sender")
             to_address = _first_string(tx, "to", "toAddress", "to_address", "receiver")
-            counterparty = to_address
-            if counterparty and counterparty.casefold() == input_norm:
+            direction = _direction_from_transaction(input_norm, from_address, to_address, requested_direction)
+            if direction == "outbound":
+                counterparty = to_address
+            elif direction == "inbound":
                 counterparty = from_address
+            else:
+                counterparty = to_address
+                if counterparty and counterparty.casefold() == input_norm:
+                    counterparty = from_address
             if not counterparty or counterparty.casefold() == input_norm:
                 continue
-            counterparty_key = counterparty.casefold()
+            counterparty_key = (counterparty.casefold(), direction)
             if counterparty_key in seen:
                 continue
             seen.add(counterparty_key)
@@ -238,7 +263,7 @@ class BitraceMcpNeighborProvider:
                     counterparty_address=counterparty,
                     chain=chain,
                     relationship_type="transfer",
-                    direction="outbound",
+                    direction=direction,
                     tx_hash=_first_string(tx, "hash", "txHash", "tx_hash") or "",
                     block_time=_first_string(tx, "time", "txTime", "blockTime", "timestamp"),
                     token_symbol=_first_string(tx, "symbol", "tokenSymbol", "token_symbol"),
@@ -260,7 +285,7 @@ class BitraceMcpNeighborProvider:
         if not text:
             return []
 
-        seen: set[str] = set()
+        seen: set[tuple[str, str]] = set()
         neighbors: list[ChainNeighbor] = []
         for line in text.splitlines():
             match = _ADDRESS_IN_PAIR_LINE_RE.search(line)
@@ -269,26 +294,60 @@ class BitraceMcpNeighborProvider:
             counterparty = match.group(1)
             if counterparty.casefold() == input_address.casefold():
                 continue
-            if counterparty.casefold() in seen:
-                continue
-            outbound_match = re.search(r"转出:([0-9.]+)", line)
-            if not outbound_match or float(outbound_match.group(1)) <= 0:
-                continue
-            seen.add(counterparty.casefold())
-            neighbors.append(
-                ChainNeighbor(
-                    input_address=input_address,
-                    counterparty_address=counterparty,
-                    chain=chain,
-                    relationship_type="transfer",
-                    direction="outbound",
-                    tx_hash="",
-                    raw={"pair_summary": line},
+            inbound_value = _amount_from_pair_line(line, "转入")
+            outbound_value = _amount_from_pair_line(line, "转出")
+            directions = []
+            if outbound_value > 0:
+                directions.append("outbound")
+            if inbound_value > 0:
+                directions.append("inbound")
+            for direction in directions:
+                if (counterparty.casefold(), direction) in seen:
+                    continue
+                seen.add((counterparty.casefold(), direction))
+                neighbors.append(
+                    ChainNeighbor(
+                        input_address=input_address,
+                        counterparty_address=counterparty,
+                        chain=chain,
+                        relationship_type="transfer",
+                        direction=direction,
+                        tx_hash="",
+                        raw={"pair_summary": line},
+                    )
                 )
-            )
+                if len(neighbors) >= limit:
+                    break
             if len(neighbors) >= limit:
                 break
         return neighbors
+
+
+def _direction_from_transaction(
+    input_norm: str,
+    from_address: str | None,
+    to_address: str | None,
+    requested_direction: str,
+) -> str:
+    if from_address and from_address.casefold() == input_norm:
+        return "outbound"
+    if to_address and to_address.casefold() == input_norm:
+        return "inbound"
+    if requested_direction == "IN":
+        return "inbound"
+    if requested_direction == "OUT":
+        return "outbound"
+    return "unknown"
+
+
+def _amount_from_pair_line(line: str, label: str) -> float:
+    match = re.search(rf"{label}:([0-9.]+)", line)
+    if not match:
+        return 0.0
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return 0.0
 
 
 def configured_bitrace_neighbor_provider() -> BitraceMcpNeighborProvider | None:
