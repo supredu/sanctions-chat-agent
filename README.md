@@ -135,6 +135,39 @@ The web app uses `data/sanctions_index.sqlite` automatically when it exists. Kee
 the raw `source_files/` exports out of deployment; the SQLite index is the runtime
 lookup artifact.
 
+## Update Official XML Sources
+
+Refresh the official OFAC and UK XML files, validate that both downloads are
+parseable XML, and rebuild the SQLite index:
+
+```bash
+.venv/bin/python scripts/update_source_files.py
+```
+
+Update only one source:
+
+```bash
+.venv/bin/python scripts/update_source_files.py --source ofac
+.venv/bin/python scripts/update_source_files.py --source uk
+```
+
+Download XML files without rebuilding the index:
+
+```bash
+.venv/bin/python scripts/update_source_files.py --skip-build
+```
+
+The updater uses these official XML endpoints:
+
+- OFAC SDN Advanced XML: `https://sanctionslistservice.ofac.treas.gov/api/download/sdn_advanced.xml`
+- UK Sanctions List XML: `https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.xml`
+
+The repository includes a GitHub Actions workflow at
+`.github/workflows/update_sanctions_data.yml`. It runs daily and can also be
+triggered manually from GitHub Actions. It downloads the ignored raw XML files,
+rebuilds `data/sanctions_index.sqlite`, writes `data/source_manifest.json`, and
+commits those runtime artifacts back to the repository when they change.
+
 ## Deploy on Render Free
 
 This repository includes `render.yaml`. Push the project to GitHub, create a new
