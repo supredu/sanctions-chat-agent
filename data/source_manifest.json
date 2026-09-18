@@ -1,14 +1,14 @@
 {
-  "updated_at": "2026-09-17T07:57:14+00:00",
+  "updated_at": "2026-09-18T07:35:26+00:00",
   "rebuilt_index": true,
   "sources": [
     {
       "key": "ofac",
       "url": "https://sanctionslistservice.ofac.treas.gov/api/download/sdn_advanced.xml",
       "path": "source_files/sdn_advanced.xml",
-      "bytes": 127004763,
-      "sha256": "8f81d70e91b4481bd04ac0acebb896d9743095170250dda89c0704f579fab6b3",
-      "updated_at": "2026-09-17T07:56:59+00:00"
+      "bytes": 127103724,
+      "sha256": "a092172349e389c768852b3600295f0296da017f756575954ef0efbcdb49b745",
+      "updated_at": "2026-09-18T07:35:09+00:00"
     },
     {
       "key": "uk",
@@ -16,7 +16,7 @@
       "path": "source_files/UK-Sanctions-List.xml",
       "bytes": 21780935,
       "sha256": "ca9f5e90f94b12a6994865a5e435c96b94e9a8e26bed279ea76be8ddc89ceb31",
-      "updated_at": "2026-09-17T07:57:01+00:00"
+      "updated_at": "2026-09-18T07:35:11+00:00"
     }
   ]
 }
