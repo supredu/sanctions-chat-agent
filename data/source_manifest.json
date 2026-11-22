@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-21T10:06:23+00:00",
+  "updated_at": "2026-11-22T10:09:38+00:00",
   "rebuilt_index": true,
   "sources": [
     {
@@ -8,7 +8,7 @@
       "path": "source_files/sdn_advanced.xml",
       "bytes": 128882950,
       "sha256": "1a58dd210db4b67670a10ba1d5f84173fd9590ad96f32f8f6797b3bd4c24ccbf",
-      "updated_at": "2026-11-21T10:06:07+00:00"
+      "updated_at": "2026-11-22T10:09:26+00:00"
     },
     {
       "key": "uk",
@@ -16,7 +16,7 @@
       "path": "source_files/UK-Sanctions-List.xml",
       "bytes": 22198502,
       "sha256": "6b558b1981c232efaff3c52e87da32369849163c7948c56646b8f3bdf7befabf",
-      "updated_at": "2026-11-21T10:06:08+00:00"
+      "updated_at": "2026-11-22T10:09:27+00:00"
     }
   ]
 }
