@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-11-26T11:23:23+00:00",
+  "updated_at": "2026-11-27T11:17:48+00:00",
   "rebuilt_index": true,
   "sources": [
     {
@@ -8,15 +8,15 @@
       "path": "source_files/sdn_advanced.xml",
       "bytes": 129071029,
       "sha256": "0d217ae9abb92aacaebb7d7f721f8a6a1fb3b4e167d9096d1aa3890d5106f04a",
-      "updated_at": "2026-11-26T11:23:08+00:00"
+      "updated_at": "2026-11-27T11:17:34+00:00"
     },
     {
       "key": "uk",
       "url": "https://sanctionslist.fcdo.gov.uk/docs/UK-Sanctions-List.xml",
       "path": "source_files/UK-Sanctions-List.xml",
-      "bytes": 22225704,
-      "sha256": "d7e37754dd73f737da271cf410d8c3f613da1114ce29939c0d3adeb5a15a3496",
-      "updated_at": "2026-11-26T11:23:10+00:00"
+      "bytes": 22229727,
+      "sha256": "872d05a1271ea5422498c56f466f3d6b42691f6686ef000f3337737a68e58323",
+      "updated_at": "2026-11-27T11:17:35+00:00"
     }
   ]
 }
